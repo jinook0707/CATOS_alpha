@@ -23,7 +23,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 '''
 
-import os, sys, multiprocessing
+import os, sys #, multiprocessing
+from billiard import Process, Pipe, forking_enable
 
 from shutil import rmtree
 from time import time, localtime, sleep
@@ -52,8 +53,8 @@ from utils import Util_MoveF as umf
 
 ### parameters
 CWD = os.getcwd()
-OUTPUT_FOLDER = 'output'
-PROGRAM_LOG_PATH = 'log.txt' # this log is only for checking programming issues, not for training/observing/recording issues.
+OUTPUT_FOLDER = '/Users/catos01/catos/output'
+PROGRAM_LOG_PATH = '/Users/catos01/catos/log.txt' # this log is only for checking programming issues, not for training/observing/recording issues.
 NUMBER_OF_CAMERAS = 1
 FLAG_FFMPEG_ON_THE_RUN = False # if this is True. JPEG files will be made into one mp4 movie file on the run
 FLAG_RTOI = False # Repeat Trial On Incorrect-response (For button-press trials)
@@ -75,23 +76,19 @@ EMAIL_SENDER = 'ohj4@univie.ac.at'
 EMAIL_RECEIVER = 'ohj4@univie.ac.at'
 
 SOUND_FILES = {}
-SOUND_FILES["name"] = os.path.join("input", "media", "c_hindung_kkamang.wav")
-#SOUND_FILES["arbitrary_name_00"] = os.path.join("input", "media", "c_nero_yaong.wav")
-#SOUND_FILES["button1"] = os.path.join("input", "media", "button1_donggran_jo_a1.wav")
-#SOUND_FILES["button2"] = os.path.join("input", "media", "button2_samgak_jo_a1.wav")
-#SOUND_FILES["button3"] = os.path.join("input", "media", "button3_nemo_jo_a1.wav")
-SOUND_FILES["button1"] = os.path.join("input", "media", "button1_donggran.wav")
-SOUND_FILES["button2"] = os.path.join("input", "media", "button2_samgak.wav")
-SOUND_FILES["button3"] = os.path.join("input", "media", "button3_nemo.wav")
-SOUND_FILES["button1_SWS"] = os.path.join("input", "media", "button1_donggran_SWS.wav")
-SOUND_FILES["button2_SWS"] = os.path.join("input", "media", "button2_samgak_SWS.wav")
-SOUND_FILES["button3_SWS"] = os.path.join("input", "media", "button3_nemo_SWS.wav")
-SOUND_FILES["button1_NVS"] = os.path.join("input", "media", "button1_donggran_NVS.wav")
-SOUND_FILES["button2_NVS"] = os.path.join("input", "media", "button2_samgak_NVS.wav")
-SOUND_FILES["button3_NVS"] = os.path.join("input", "media", "button3_nemo_NVS.wav")
-SOUND_FILES["foil"] = os.path.join("input", "media", "button4_yukgak.wav")
-SOUND_FILES["neg_feedback1"] = os.path.join("input", "media", "AudFB_Neg1.wav")
-SOUND_FILES["neg_feedback2"] = os.path.join("input", "media", "AudFB_Neg2.wav")
+SOUND_FILES["name"] = "/Users/catos01/catos/input/media/c_hindung_kkamang.wav"
+SOUND_FILES["button1"] = "/Users/catos01/catos/input/media/button1_donggran.wav"
+SOUND_FILES["button2"] = "/Users/catos01/catos/input/media/button2_samgak.wav"
+SOUND_FILES["button3"] = "/Users/catos01/catos/input/media/button3_nemo.wav"
+SOUND_FILES["button1_SWS"] = "/Users/catos01/catos/input/media/button1_donggran_SWS.wav"
+SOUND_FILES["button2_SWS"] = "/Users/catos01/catos/input/media/button2_samgak_SWS.wav"
+SOUND_FILES["button3_SWS"] = "/Users/catos01/catos/input/media/button3_nemo_SWS.wav"
+SOUND_FILES["button1_NVS"] = "/Users/catos01/catos/input/media/button1_donggran_NVS.wav"
+SOUND_FILES["button2_NVS"] = "/Users/catos01/catos/input/media/button2_samgak_NVS.wav"
+SOUND_FILES["button3_NVS"] = "/Users/catos01/catos/input/media/button3_nemo_NVS.wav"
+SOUND_FILES["foil"] = "/Users/catos01/catos/input/media/button4_yukgak.wav"
+SOUND_FILES["neg_feedback1"] = "/Users/catos01/catos/input/media/AudFB_Neg1.wav"
+SOUND_FILES["neg_feedback2"] = "/Users/catos01/catos/input/media/AudFB_Neg2.wav"
 SND_NAME_IDX = 0
 SND_BUTTON1_IDX = 1
 SND_BUTTON2_IDX = 2
@@ -255,7 +252,7 @@ def msgB_run(msgB_conn):
 
 #------------------------------------------------------------------------------------
 
-def schema_run(schema_conn):
+def schema_run(schema_conn, AAS, AAO):
 # Running a schema which AA runs on thought a session
     writeFile(PROGRAM_LOG_PATH, "%s, ***** Staring of the program.\n\n"%get_time_stamp())
     chk_resource_usage(PROGRAM_LOG_PATH) # check the resource (cpu, memory) usage
@@ -388,7 +385,7 @@ class AA_Schema:
     def save_movie_processing(self, msg_from_vi_conn):
     ### OBSOLETE
         # save the movie file
-        sm_p = multiprocessing.Process(target=save_movie, args=(msg_from_vi_conn, self.log_file_path, ))
+        sm_p = Process(target=save_movie, args=(msg_from_vi_conn, self.log_file_path, ))
         sm_p.start()
 
     #---------------------------------------------------------------------------------
@@ -742,43 +739,44 @@ class AA_Schema:
 #-------------------------------------------------------------------------------------
 
 
-class AA_Organizer(multiprocessing.Process):
+class AA_Organizer(Process):
 # Main class for organizing modules.
     def __init__(self):
         global LOG_FILE_PATH
-        multiprocessing.Process.__init__(self)
+        Process.__init__(self)
         LOG_FILE_PATH = get_log_file_path(OUTPUT_FOLDER)
 
     #---------------------------------------------------------------------------------
 
     def run(self):
+        forking_enable(0)
         ### set up bidirectional Pipes between this object and other modules
         self.main_vi_conn = [None] * NUMBER_OF_CAMERAS
         self.vi_conn = [None] * NUMBER_OF_CAMERAS
         for i in range(NUMBER_OF_CAMERAS):
-            self.main_vi_conn[i], self.vi_conn[i] = multiprocessing.Pipe(True)
+            self.main_vi_conn[i], self.vi_conn[i] = Pipe(True)
 
-        self.main_ai_conn, self.ai_conn = multiprocessing.Pipe(True)
-        self.main_ao_conn, self.ao_conn = multiprocessing.Pipe(True)
-        self.main_schema_conn, self.schema_conn = multiprocessing.Pipe(True)
-        self.main_msgB_conn, self.msgB_conn = multiprocessing.Pipe(True)
+        self.main_ai_conn, self.ai_conn = Pipe(True)
+        self.main_ao_conn, self.ao_conn = Pipe(True)
+        self.main_schema_conn, self.schema_conn = Pipe(True)
+        self.main_msgB_conn, self.msgB_conn = Pipe(True)
 
         self.vi_p = []
         for i in range(NUMBER_OF_CAMERAS):
-            self.vi_p.append(multiprocessing.Process(target=videoIn_run, args=(self.vi_conn[i], LOG_FILE_PATH, OUTPUT_FOLDER, i, FLAG_FFMPEG_ON_THE_RUN, SESSION_START_HOUR, SESSION_END_HOUR,)))
+            self.vi_p.append(Process(target=videoIn_run, args=(self.vi_conn[i], LOG_FILE_PATH, OUTPUT_FOLDER, i, FLAG_FFMPEG_ON_THE_RUN, SESSION_START_HOUR, SESSION_END_HOUR,)))
             self.vi_p[i].start() # video-module process starts
             sleep(3)
 
-        self.ai_p = multiprocessing.Process(target=audioIn_run, args=(self.ai_conn, LOG_FILE_PATH, OUTPUT_FOLDER, SESSION_START_HOUR, SESSION_END_HOUR,))
+        self.ai_p = Process(target=audioIn_run, args=(self.ai_conn, LOG_FILE_PATH, OUTPUT_FOLDER, SESSION_START_HOUR, SESSION_END_HOUR,))
         self.ai_p.start() # audio-module process starts
 
-        self.ao_p = multiprocessing.Process(target=audioOut_run, args=(self.ao_conn, LOG_FILE_PATH, OUTPUT_FOLDER, SOUND_FILES, SESSION_START_HOUR, SESSION_END_HOUR,))
+        self.ao_p = Process(target=audioOut_run, args=(self.ao_conn, LOG_FILE_PATH, OUTPUT_FOLDER, SOUND_FILES, SESSION_START_HOUR, SESSION_END_HOUR,))
         self.ao_p.start() # audio-module process starts
 
-        self.schema_p = multiprocessing.Process(target=schema_run, args=(self.schema_conn,))
+        self.schema_p = Process(target=schema_run, args=(self.schema_conn, AAS, AAO,))
         self.schema_p.start() # message polling from the video-module starts
 
-        self.msgB_p = multiprocessing.Process(target=msgB_run, args=(self.msgB_conn,))
+        self.msgB_p = Process(target=msgB_run, args=(self.msgB_conn,))
         self.msgB_p.start() # message polling from the video-module starts
 
         #try:
